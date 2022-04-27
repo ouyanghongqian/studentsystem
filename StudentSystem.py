@@ -367,7 +367,7 @@ def ifHaveNewVer():
             file = f.readlines()
             for i in file:
                 i = i.split("\n")[0]
-            if file[-1][1:] == internetCode[2:]:
+            if file[-1][2:] == internetCode[2:]:
                 return False
             else:
                 return True
