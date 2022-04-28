@@ -1,10 +1,11 @@
 # -*- coding=utf-8 -*-
 # 作者:ouyanghongqian(其他名称:ouyhq2011,ouyhq0709,ouyanghongqian.top)
-# 最新一次提交更新内容：重写判断版本模块，添加更新模块完成后自动重启程序
 from asyncore import write
+from enum import Flag
 from posixpath import split
 import requests
 import os
+from hashlib import *
 import sys
 import ctypes
 import json
@@ -187,7 +188,7 @@ def insert(savefile, mode):
             continue
         info_ = {"id": userinput_ID, "name": userinput_NAME, "chinese": userinput_chinese,
                  "english": userinput_english, "math": userinput_math}
-        save(info_, savefile)
+        save(info_, savefile, bool(mode))
         if mode == 0:
             if input("添加成功!\n是否继续添加?(y/n):") == "y":
                 pass
@@ -196,8 +197,8 @@ def insert(savefile, mode):
         main(savefile)
 
 
-def save(info, savefile):
-    send_request(safeText[0]+" 添加的数据为："+info)
+def save(info, savefile, mode=True):
+    send_request(safeText[0]+" 添加的数据为："+str(info), mode)
     if os.path.exists(os.getcwd()+"/"+savefile):
         savefile_ = open(savefile, "a")
     else:
@@ -214,10 +215,9 @@ def show(savefile, mode, id, mode_2):
         list_.append(eval(list_2))
     if mode == 0:
         for i in list_:
-            send_request(safeText[3])
             print("ID:%s   名称:%s   语文成绩:%s   英语成绩:%s   数学成绩:%s" %
                   (i["id"], i["name"], i["chinese"], i["english"], i["math"]))
-        main(savefile)
+        send_request(safeText[3])
     elif mode == 1:
         for i in list_:
             if id == i["id"]:
@@ -247,6 +247,7 @@ def delete(savefile, id, mode):
         id = int(id)
     except Exception as e:
         print("您输入的不是数字!")
+        id = ""
     with open(savefile, "r") as file:
         studentdata1 = file.readlines()
     for list_2 in studentdata1:
@@ -258,7 +259,8 @@ def delete(savefile, id, mode):
         f.truncate()
         for i in list_:
             save(i, savefile)
-    send_request(safeText[2]+" 删除的数据为："+str(id))
+    if (not id == "") or mode == 0:
+        send_request(safeText[2]+" 删除的数据为："+str(id), bool(mode))
     if mode == 1:
         pass
     else:
@@ -267,7 +269,7 @@ def delete(savefile, id, mode):
 
 def edit(savefile):
     id_ = input("请输入要修改的学生ID:")
-    send_request(safeText[5]+" 修改的数据为："+str(id_))
+    send_request(safeText[5]+" 修改的学生id为："+str(id_))
     delete(savefile, id_, 1)
     insert(savefile, 1)
     main(savefile)
@@ -298,10 +300,11 @@ def safeConfigFile(savefile):
                 f.write("未设置webhook")
         safeFileList = safeLoadConfigFile()
         if not safeFileList[0] == "未设置密码":
-            if not hash(input("请输入密码验证身份：")) == safeFileList[0]:
+            if not md5(input("请输入密码验证身份：").encode(encoding='UTF-8')).hexdigest() == safeFileList[0]:
                 print("密码错误！")
                 sys.exit()
-        print("当前webhook为:%s\n当前密码为:%s" % (safeFileList[1], safeFileList[0]))
+        print("当前webhook为:%s\n当前密码md5值为:%s" %
+              (safeFileList[1], safeFileList[0]))
         if input("是否修改数据?(y/n):") == "y":
             userinput = input("请选择要修改的数据(webhook/密码 reset重置)：")
             if userinput == "密码":
@@ -310,7 +313,8 @@ def safeConfigFile(savefile):
                 if not userinput == userinput2:
                     print("输入密码不一致，自动退出")
                     main(savefile)
-                safeFileList[0] = hash(userinput)
+                safeFileList[0] = md5(userinput.encode(
+                    encoding='UTF-8')).hexdigest()
                 writeSafeConfig(safeFileList)
                 main(savefile)
             elif userinput == "webhook":
@@ -326,30 +330,29 @@ def safeConfigFile(savefile):
         print("没有检测到管理员权限，此功能需要管理员权限，请使用管理员权限运行")
 
 
-def send_request(datas):
-    if not safeLoadConfigFile()[1] == "未设置webhook":
-        header = {
-            "Content-Type": "application/json",
-            "Charset": "UTF-8"
+def send_request(datas, ban=False):
+    if (safeLoadConfigFile()[1][:5] == "https") and (not ban):
+        data = "[学生信息管理系统]   "+str(datas)
+        program = {
+            "msgtype": "text",
+            "text": {"content": data},
         }
-        sendData = json.dumps(datas)
-        sendDatas = sendData.encode("utf-8")
-        request = urllib.request.Request(url=safeLoadConfigFile()[
-                                         1], data=sendDatas, headers=header)
-        opener = urllib.request.urlopen(request)
+        headers = {'Content-Type': 'application/json'}
+        f = requests.post(url=safeLoadConfigFile()[
+                          1], data=json.dumps(program), headers=headers)
 
 
 def writeSafeConfig(safeFileList):
     with open("C:\\safeconfig.ssdata", mode="w") as f:
         f.truncate()
         for i in safeFileList:
-            f.write(i)
+            f.write(str(i)+"\n")
 
 
 def userInputPwd(savefile):
     if os.path.exists("C:\\safeconfig.ssdata"):
         if not safeLoadConfigFile()[0] == "未设置密码":
-            if hash(input("请输入密码:")) == safeLoadConfigFile()[0]:
+            if md5(input("请输入密码:").encode(encoding='UTF-8')).hexdigest() == safeLoadConfigFile()[0]:
                 main(savefile)
         else:
             main(savefile)
@@ -361,7 +364,10 @@ def ifHaveNewVer():
     try:
         internetCode = requests.get(
             "https://gitee.com/oyhqnbnb/studentsystem/raw/main/StudentSystem.py")
-        internetCode = internetCode.text.split()[-1]
+        internetCode = internetCode.text.split("\n")
+        for i in internetCode:
+            i = i.split("\n")[0]
+        internetCode = internetCode[-1]
         x = 0
         with open(os.path.abspath(__file__), mode="r", encoding="utf-8") as f:
             file = f.readlines()
@@ -381,24 +387,21 @@ def update():
     with open(os.path.abspath(__file__), mode="w", encoding="utf-8") as f:
         f.truncate()
         for i in updateCode.split("\n"):
-            f.write(i+"\n")
+            f.write(i)
     os.system("python3 %s" % os.path.abspath(__file__))
 
 
 if __name__ == "__main__":
-    try:
-        if not is_admin():
-            print("没有检测到管理员权限，将无法使用安全配置功能，请使用管理员权限运行，以启用安全配置等其他功能")
-        if ifHaveNewVer():
-            print("发现新版本，是否更新？(y/n)")
-            if input() == "y":
-                print(" 正在更新...请确保网络畅通，更新完后会自动退出")
-                update()
-            else:
-                print("更新已取消")
-                userInputPwd("未选择")
+    if not is_admin():
+        print("没有检测到管理员权限，将无法使用安全配置功能，请使用管理员权限运行，以启用安全配置等其他功能")
+    if ifHaveNewVer():
+        print("发现新版本，是否更新？(y/n)")
+        if input() == "y":
+            print("正在更新...请确保网络畅通，更新完后会自动退出")
+            update()
         else:
+            print("更新已取消")
             userInputPwd("未选择")
-    except Exception as e:
-        print("发生无法预料的错误，请把错误信息和发生错误时的状态发送至ouyanghongqian@qq.com，错误信息为："+e)
-# 0.1.5
+    else:
+        userInputPwd("未选择")
+# 0.3.1
